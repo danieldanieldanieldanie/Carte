@@ -11,7 +11,7 @@ public struct CardSide: Codable, Hashable, Sendable {
 }
 
 public extension CardSide {
-    enum Index: Int, Codable, Sendable {
+    enum Index: Int, Codable, Sendable, CaseIterable {
         case front = 0
         case back = 1
     }

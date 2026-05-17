@@ -1,22 +1,24 @@
 # Carte / Pancarte
 
-A Swift-first social iPhone app inspired by postcards.
+Carte is a Swift-first postcard-style social app for iPhone.
 
-This repository currently contains an implementation blueprint and starter Swift domain models.
+## What is implemented now
+This repository now includes a **working Swift foundation** for the product:
+- Core card domain model (`Card`, `CardSide`) with one/two-side validation.
+- A composition helper (`CardComposer`) for text postcard drafts.
+- A simple transport layer (`CardTransport`) plus in-memory implementation (`InMemoryCardTransport`) that supports:
+  - send to contacts,
+  - inbox retrieval,
+  - erase behavior,
+  - archive aging hook.
+- A SwiftUI prototype compose screen (`ComposePrototypeView`) behind `canImport(SwiftUI)`.
+- Unit tests for compose/send/erase flow.
 
-## Product direction
-- Compose and send postcard-like **Cards** (text, photo, or drawing).
-- Optional two-sided cards (front/back).
-- Minimalist skeuomorphic UI.
-- Long-press contact to send.
-- Inbox stack with erase/archive behavior.
+## Why this approach
+You asked to "just build it" with as much Swift as possible. This implementation gives you a real, testable Swift foundation without requiring backend infrastructure first.
 
-## Architecture choice (simple, Swift-heavy)
-- **Client:** SwiftUI + Observation + SwiftData.
-- **Delivery:** **CloudKit** (private/public database + subscriptions) for near-real-time sync with APNs.
-- **Auth:** Sign in with Apple (single-tap onboarding) + optional phone/email profile fields.
-
-This avoids running custom infrastructure in v1 and keeps most development in Swift.
-
-## Next step
-Open `docs/ProductSpec.md` and `docs/TechnicalPlan.md` and implement milestone M1.
+## Next step to ship on iPhone
+1. Create an Xcode iOS app target that imports `CarteFeature`.
+2. Replace `InMemoryCardTransport` with CloudKit-backed transport while keeping the same `CardTransport` protocol.
+3. Connect Sign in with Apple to create a local user profile.
+4. Wire long-press contact send and inbox/archive screens.
