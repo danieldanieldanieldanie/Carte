@@ -2,23 +2,19 @@
 
 Carte is a Swift-first postcard-style social app for iPhone.
 
-## What is implemented now
-This repository now includes a **working Swift foundation** for the product:
-- Core card domain model (`Card`, `CardSide`) with one/two-side validation.
-- A composition helper (`CardComposer`) for text postcard drafts.
-- A simple transport layer (`CardTransport`) plus in-memory implementation (`InMemoryCardTransport`) that supports:
-  - send to contacts,
-  - inbox retrieval,
-  - erase behavior,
-  - archive aging hook.
-- A SwiftUI prototype compose screen (`ComposePrototypeView`) behind `canImport(SwiftUI)`.
-- Unit tests for compose/send/erase flow.
+## Implemented in code now
+- Core postcard domain model (`Card`, `CardSide`) with validation.
+- Feature models (`Contact`, `CardDelivery`) and compose helper (`CardComposer`).
+- `CardTransport` abstraction with:
+  - `InMemoryCardTransport` for local/dev testing.
+  - `CloudKitCardTransport` for serverless iCloud-backed delivery.
+- `CarteAppState` for compose/send/inbox state orchestration.
+- SwiftUI `ComposePrototypeView` with press-and-hold contact send gesture.
+- Unit tests for card model, transport flow, and app-state send/inbox behavior.
 
-## Why this approach
-You asked to "just build it" with as much Swift as possible. This implementation gives you a real, testable Swift foundation without requiring backend infrastructure first.
+## CloudKit notes
+`CloudKitCardTransport` uses two record types:
+- `Card`
+- `CardDelivery`
 
-## Next step to ship on iPhone
-1. Create an Xcode iOS app target that imports `CarteFeature`.
-2. Replace `InMemoryCardTransport` with CloudKit-backed transport while keeping the same `CardTransport` protocol.
-3. Connect Sign in with Apple to create a local user profile.
-4. Wire long-press contact send and inbox/archive screens.
+This keeps infra simple (no rented servers) while preserving the same transport protocol for future evolution.

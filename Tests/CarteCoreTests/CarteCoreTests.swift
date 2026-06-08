@@ -35,4 +35,22 @@ final class CarteCoreTests: XCTestCase {
         inbox = try await transport.inbox(for: recipient)
         XCTAssertEqual(inbox.count, 0)
     }
+
+    @MainActor
+    func testAppStateSendAndRefreshInbox() async throws {
+        let me = UUID()
+        let transport = InMemoryCardTransport()
+        let state = CarteAppState(
+            currentUserID: me,
+            currentUserDisplayName: "Me",
+            contacts: [.init(id: me, displayName: "Me")],
+            transport: transport
+        )
+
+        state.draft.frontText = "Hello"
+        try await state.sendDraft(to: state.contacts[0])
+        try await state.refreshInbox()
+
+        XCTAssertEqual(state.inbox.count, 1)
+    }
 }
