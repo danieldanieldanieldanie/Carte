@@ -1,45 +1,41 @@
-# Carte Product Spec (v1)
+# Carte / Pancarte product spec
 
-## Core concept
-Carte is a private social postcard app. Users create discrete "cards" and send them to contacts. Every card is a standalone object that can be viewed, kept, or erased.
+## Principle
 
-## Primary flows
+Carte is a quiet postcard app. No feeds, likes, metrics, or algorithmic ranking. The primary action is writing one small card to one known person.
 
-### 1) Compose
-- Default screen is card composition canvas.
-- Card can contain one medium per side:
-  - Text
-  - Photo
-  - Drawing
-- Card may have only a front side, or front + back.
+## First TestFlight scope
 
-### 2) Send
-- Contacts appear as a grid under the composer.
-- Long-pressing a contact sends the currently composed card.
-- Show haptic + subtle stamped animation on send.
+### Onboarding
 
-### 3) Receive
-- Inbox presents incoming cards in a stack.
-- Each card displays sender name and sent date.
-- Recipient can flip card to inspect both sides.
-- "Erase" button permanently deletes card for recipient.
-- Non-erased cards auto-move to archive after a configurable delay (e.g., 7 days).
+- User enters a display name.
+- App creates a local profile UUID that doubles as an invite code.
+- Friends exchange invite codes manually.
 
-### 4) Archive
-- Chronological gallery of preserved cards.
-- Cards remain discrete immutable objects after send.
+### Compose
 
-## UX principles
-- Minimal controls, tactile metaphors (paper texture, shadows, stacked depth).
-- No feed algorithm; purely person-to-person exchange.
-- Low-friction onboarding.
+- A card has a front and optional back.
+- The composer is a single paper-like surface with sparse controls.
+- Text is supported directly.
+- Photo and drawing sides are represented in the model/UI; full media upload is the next hardening step.
+- Long-pressing a contact sends the current card.
 
-## Onboarding requirements
-- Sign in with Apple as the default.
-- One-step display name entry.
-- Optional: import contacts (permission-gated).
+### Receive
 
-## Safety & trust (v1)
-- Block user.
-- Report user/card.
-- Private by default; no public discovery unless explicitly enabled.
+- Incoming cards appear in the Tray.
+- A card displays the sender name and one side at a time.
+- Tapping flips a two-sided card.
+- Erase removes the delivery from the visible tray/archive.
+- Archive saves a card outside the tray.
+
+### Archive
+
+- Archive is a simple chronological list of saved cards.
+- Cards can still be erased from the archive.
+
+### Visual design
+
+- Warm off-white canvas.
+- Paper cards with thin borders and subtle shadows.
+- System typography with a light serif treatment on card content.
+- Sparse labels and plain capsule actions.

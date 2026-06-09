@@ -4,6 +4,7 @@ import CarteCore
 public protocol CardTransport: Sendable {
     func send(card: Card, to recipientIDs: [UUID]) async throws -> [CardDelivery]
     func inbox(for recipientID: UUID) async throws -> [CardDelivery]
+    func archive(deliveryID: UUID, for recipientID: UUID) async throws
     func erase(deliveryID: UUID, for recipientID: UUID) async throws
     func archiveExpired(for recipientID: UUID, olderThan: TimeInterval) async throws
 }
@@ -35,7 +36,14 @@ public actor InMemoryCardTransport: CardTransport {
     }
 
     public func inbox(for recipientID: UUID) async throws -> [CardDelivery] {
-        deliveries[recipientID, default: []].filter(\.isInInbox)
+        deliveries[recipientID, default: []].filter { $0.erasedAt == nil }
+    }
+
+    public func archive(deliveryID: UUID, for recipientID: UUID) async throws {
+        guard var entries = deliveries[recipientID] else { return }
+        guard let idx = entries.firstIndex(where: { $0.id == deliveryID }) else { return }
+        entries[idx].archivedAt = .now
+        deliveries[recipientID] = entries
     }
 
     public func erase(deliveryID: UUID, for recipientID: UUID) async throws {

@@ -1,72 +1,52 @@
-# Carte Technical Plan (Swift-first)
+# Carte technical plan
 
-## Why CloudKit for v1
-CloudKit is the simplest approach that still gives:
-- Swift-native APIs.
-- Authentication via iCloud account (plus app-level identity mapping).
-- Push-driven updates via subscriptions.
-- No custom server to operate in v1.
+## Current architecture
 
-This is not federated. Federation can be a later phase once product-market fit is proven.
+- **iOS app:** `Carte.xcodeproj` contains a SwiftUI application target for TestFlight handoff.
+- **Core package:** `CarteCore` owns card/domain invariants.
+- **Feature package:** `CarteFeature` owns app state, transports, profile/contact storage, CloudKit integration, and SwiftUI screens.
+- **Serverless delivery:** `CloudKitCardTransport` uses the public CloudKit database so cards can be delivered across iCloud accounts without running a server.
 
-## App stack
-- iOS 18+ target.
-- SwiftUI app lifecycle.
-- SwiftData for local persistence/cache.
-- CloudKit for sync + delivery state.
-- PencilKit for drawing cards.
-- PhotosPicker for images.
+## CloudKit records
 
-## Domain model
-- Card
-  - id, senderID, createdAt, sentAt
-  - sides: [CardSide] (count 1...2)
-  - lifecycle: draft, sent, received, archived, erased
-- CardSide
-  - sideIndex (front/back)
-  - contentType: text | photo | drawing
-  - payload reference (text inline, media in CKAsset)
-- Delivery
-  - cardID, recipientID, deliveredAt, readAt, erasedAt, archivedAt
+### `CarteProfile`
 
-## CloudKit records (suggested)
-- `UserProfile`
-- `Card`
-- `CardSide`
-- `CardDelivery`
-- `ContactEdge`
+- recordName: user UUID / invite code
+- `displayName: String`
+- `inviteCode: String`
+- `createdAt: Date`
 
-## Sync behavior
-- Sender writes Card + sides, then a CardDelivery per recipient.
-- Recipient device receives subscription push for new CardDelivery.
-- App fetches delta and inserts into local inbox stack.
-- Erase marks erasedAt and purges local content.
+### `Card`
 
-## Simplicity-first auth
-- App auth: Sign in with Apple -> internal user ID.
-- CloudKit user record ID mapped once on first launch.
-- Keep signup to <= 20 seconds.
+- recordName: card UUID
+- `senderID: String`
+- `senderDisplayName: String`
+- `createdAt: Date`
+- `sentAt: Date`
+- `lifecycle: String`
+- `sidesData: Data` JSON-encoded `[CardSide]`
 
-## Milestones
+### `CardDelivery`
 
-### M1 (2-3 weeks)
-- Compose one-sided text/photo cards.
-- Contact grid.
-- Long-press send.
-- Inbox stack + erase.
+- recordName: delivery UUID
+- `cardID: String`
+- `recipientID: String`
+- `senderID: String`
+- `deliveredAt: Date`
+- `archivedAt: Date?`
+- `erasedAt: Date?`
 
-### M2 (2-3 weeks)
-- Two-sided cards.
-- Drawing side via PencilKit.
-- Archive auto-move job.
+## Before TestFlight
 
-### M3 (2 weeks)
-- Block/report.
-- Delivery reliability improvements.
-- Performance pass + TestFlight.
+- Replace placeholder bundle/container identifiers with production identifiers.
+- Create CloudKit schema in Development by running the app once.
+- Add indexes for delivery queries and deploy schema to Production.
+- Switch entitlement `aps-environment` to production through the archive/signing flow.
+- Test two iCloud accounts on two physical devices; CloudKit sharing cannot be fully validated in this Linux CI environment.
 
-## Future federation option
-If federation is required later:
-- Add a Swift server (Vapor + Postgres).
-- Use ActivityPub-style actor and inbox/outbox semantics.
-- Keep client model unchanged; swap transport adapter.
+## Remaining polish after first TestFlight
+
+- Upload real selected photo/drawing data as `CKAsset` records instead of current attachment tokens.
+- Add full PencilKit editing canvas and thumbnail rendering.
+- Add block/report controls and sender allow-lists.
+- Add UI tests and CloudKit integration tests that run on macOS/Xcode CI.
