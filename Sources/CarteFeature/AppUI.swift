@@ -74,6 +74,7 @@ private struct OnboardingView: View {
 public struct ComposeScreen: View {
     @ObservedObject private var state: CarteAppState
     @State private var showingBack = false
+    @State private var recipientNumber = ""
     @State private var selectedContactID: Contact.ID?
     #if canImport(PhotosUI)
     @State private var selectedPhoto: PhotosPickerItem?
@@ -118,8 +119,12 @@ public struct ComposeScreen: View {
                             .foregroundStyle(.secondary)
                     }
 
+                    NumberPad(number: $recipientNumber) {
+                        Task { await sendToNumber() }
+                    }
+
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("hold a name to send")
+                        Text("or hold a saved number")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         ContactGrid(contacts: state.contacts) { contact in
@@ -155,6 +160,60 @@ public struct ComposeScreen: View {
     private func send(to contact: Contact) async {
         await state.runBusyOperation {
             try await state.sendDraft(to: contact)
+        }
+    }
+
+    private func sendToNumber() async {
+        await state.runBusyOperation {
+            guard let number = Int(recipientNumber), number >= 0 else { throw CarteUserFacingError.invalidUserNumber }
+            try await state.sendDraft(toUserNumber: number)
+            recipientNumber = ""
+        }
+    }
+}
+
+@available(iOS 18.0, macOS 15.0, *)
+private struct NumberPad: View {
+    @Binding var number: String
+    let onSend: () -> Void
+
+    private let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "send"]
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("send to Carte number")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(number.isEmpty ? "#" : "#\(number)")
+                .font(.system(size: 34, weight: .regular, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .background(RoundedRectangle(cornerRadius: 18).fill(.white.opacity(0.72)))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(.black.opacity(0.07)))
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(keys, id: \.self) { key in
+                    Button { tap(key) } label: {
+                        Text(key)
+                            .font(.callout)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                    }
+                    .buttonStyle(CartePillStyle())
+                }
+            }
+        }
+    }
+
+    private func tap(_ key: String) {
+        switch key {
+        case "send":
+            onSend()
+        case "⌫":
+            if !number.isEmpty { number.removeLast() }
+        default:
+            guard number.count < 12 else { return }
+            number.append(key)
         }
     }
 }
@@ -196,7 +255,7 @@ private struct ContactGrid: View {
 
     var body: some View {
         if contacts.isEmpty {
-            Text("Add a friend from the Me tab by exchanging invite codes.")
+            Text("Add a friend from the Me tab by exchanging Carte numbers.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .padding(14)
@@ -205,7 +264,7 @@ private struct ContactGrid: View {
         } else {
             LazyVGrid(columns: columns, spacing: 10) {
                 ForEach(contacts) { contact in
-                    Text(contact.displayName)
+                    Text(contact.userNumber.map { "#\($0)  \(contact.displayName)" } ?? contact.displayName)
                         .font(.callout)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
@@ -287,7 +346,7 @@ private struct DeliveryCard<Actions: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("from \(delivery.card.senderDisplayName)")
+            Text(delivery.card.senderNumber.map { "from #\($0)  \(delivery.card.senderDisplayName)" } ?? "from \(delivery.card.senderDisplayName)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             CardFaceView(card: delivery.card, showingBack: showingBack)
@@ -356,38 +415,39 @@ public struct CardFaceView: View {
 public struct SettingsScreen: View {
     @ObservedObject private var state: CarteAppState
     @State private var contactName = ""
-    @State private var inviteCode = ""
+    @State private var userNumber = ""
 
     public init(state: CarteAppState) { self.state = state }
 
     public var body: some View {
         NavigationStack {
             Form {
-                Section("Invite code") {
-                    Text(state.profile?.inviteCode ?? "")
-                        .font(.system(.footnote, design: .monospaced))
+                Section("Carte number") {
+                    Text(state.profile?.userNumber.map { "#\($0)" } ?? "iCloud identity pending")
+                        .font(.system(.title3, design: .monospaced))
                         .textSelection(.enabled)
-                    Text("Exchange this code with a friend. Carte uses it as the CloudKit delivery address.")
+                    Text("Exchange this number with a friend. It is assigned once to your iCloud account and is used as your Carte address.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Section("Add contact") {
                     TextField("name", text: $contactName)
-                    TextField("invite code", text: $inviteCode)
-                        .textInputAutocapitalization(.never)
+                    TextField("number", text: $userNumber)
+                        .keyboardType(.numberPad)
                     Button("Add") {
                         Task {
                             await state.runBusyOperation {
-                                try await state.addContact(displayName: contactName, inviteCode: inviteCode)
+                                guard let number = Int(userNumber) else { throw CarteUserFacingError.invalidUserNumber }
+                                try await state.addContact(displayName: contactName, userNumber: number)
                                 contactName = ""
-                                inviteCode = ""
+                                userNumber = ""
                             }
                         }
                     }
                 }
                 Section("Contacts") {
                     ForEach(state.contacts) { contact in
-                        Text(contact.displayName)
+                        Text(contact.userNumber.map { "#\($0)  \(contact.displayName)" } ?? contact.displayName)
                     }
                     .onDelete { offsets in
                         for index in offsets { Task { try? await state.removeContact(state.contacts[index]) } }

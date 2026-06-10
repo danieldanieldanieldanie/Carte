@@ -54,11 +54,17 @@ public final class CarteAppState {
 
     private let transport: any CardTransport
     private let store: (any ProfileStore)?
+    private let identityDirectory: (any IdentityDirectory)?
     private let composer = CardComposer()
     private let contactBook: ContactBook?
 
     public var currentUserID: UUID { profile?.id ?? fallbackUserID }
+    public var currentUserNumber: Int? { profile?.userNumber }
     public var currentUserDisplayName: String { profile?.displayName ?? fallbackDisplayName }
+
+    private var currentUserAddress: UserAddress {
+        UserAddress(id: currentUserID, number: currentUserNumber ?? -1)
+    }
 
     private let fallbackUserID: UUID
     private let fallbackDisplayName: String
@@ -73,6 +79,7 @@ public final class CarteAppState {
         self.contacts = contacts
         self.transport = transport
         self.store = nil
+        self.identityDirectory = nil
         self.contactBook = nil
         self.fallbackUserID = currentUserID
         self.fallbackDisplayName = currentUserDisplayName
@@ -82,12 +89,14 @@ public final class CarteAppState {
         profile: UserProfile? = nil,
         contacts: [Contact] = [],
         transport: any CardTransport,
-        store: (any ProfileStore)? = nil
+        store: (any ProfileStore)? = nil,
+        identityDirectory: (any IdentityDirectory)? = nil
     ) {
         self.profile = profile
         self.contacts = contacts
         self.transport = transport
         self.store = store
+        self.identityDirectory = identityDirectory
         self.contactBook = store.map(ContactBook.init(store:))
         self.fallbackUserID = profile?.id ?? UUID()
         self.fallbackDisplayName = profile?.displayName ?? "Carte User"
@@ -97,6 +106,12 @@ public final class CarteAppState {
         guard let store else { return }
         await runBusyOperation(successMessage: nil) {
             profile = try await store.loadProfile() ?? profile
+            if let profile, profile.userNumber == nil, let identityDirectory {
+                self.profile = try await identityDirectory.ensureIdentity(displayName: profile.displayName, existingProfile: profile)
+                if let securedProfile = self.profile {
+                    try await store.saveProfile(securedProfile)
+                }
+            }
             contacts = try await store.loadContacts()
             archive = try await store.loadArchive().sorted(by: { $0.deliveredAt > $1.deliveredAt })
             try await refreshInboxAndArchive()
@@ -105,18 +120,36 @@ public final class CarteAppState {
 
     public func createProfile(displayName: String) async throws {
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let next = UserProfile(displayName: trimmed.isEmpty ? "Carte User" : trimmed)
+        let draftProfile = UserProfile(displayName: trimmed.isEmpty ? "Carte User" : trimmed)
+        let securedProfile = try await identityDirectory?.ensureIdentity(displayName: draftProfile.displayName, existingProfile: draftProfile) ?? draftProfile
         announceChange()
-        profile = next
-        try await store?.saveProfile(next)
-        statusMessage = "Profile ready. Share your invite code with a friend."
+        profile = securedProfile
+        try await store?.saveProfile(securedProfile)
+        if let number = securedProfile.userNumber {
+            statusMessage = "Profile ready. Your Carte number is #\(number)."
+        } else {
+            statusMessage = "Profile ready. Sign in to iCloud to receive a Carte number."
+        }
     }
 
     public func addContact(displayName: String, inviteCode: String) async throws {
+        guard let number = Int(inviteCode.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw CarteUserFacingError.invalidUserNumber
+        }
+        try await addContact(displayName: displayName, userNumber: number)
+    }
+
+    public func addContact(displayName: String, userNumber: Int) async throws {
         guard let contactBook else { return }
+        let directoryContact = try await identityDirectory?.contact(forUserNumber: userNumber)
+        let resolvedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? directoryContact?.displayName ?? "Carte #\(userNumber)"
+            : displayName
+        let contact = directoryContact.map { Contact(id: $0.id, displayName: resolvedName, userNumber: userNumber, note: $0.note) }
+            ?? Contact(displayName: resolvedName, userNumber: userNumber)
         announceChange()
-        contacts = try await contactBook.addContact(displayName: displayName, inviteCode: inviteCode, to: contacts)
-        statusMessage = "Contact added."
+        contacts = try await contactBook.upsert(contact, into: contacts)
+        statusMessage = "Added #\(userNumber)."
     }
 
     public func removeContact(_ contact: Contact) async throws {
@@ -133,23 +166,39 @@ public final class CarteAppState {
         let card = composer.compose(
             senderID: profile.id,
             senderDisplayName: profile.displayName,
+            senderNumber: profile.userNumber,
             front: content(text: draft.frontText, attachmentID: draft.frontAttachmentID, kind: draft.frontAttachmentKind),
             back: optionalBackContent()
         )
-        _ = try await transport.send(card: card, to: [contact.id])
+        _ = try await transport.send(card: card, to: [contact])
         announceChange()
         draft = ComposeDraft()
         statusMessage = "Sent to \(contact.displayName)."
     }
 
+    public func sendDraft(toUserNumber userNumber: Int) async throws {
+        let contact: Contact
+        if let existing = contacts.first(where: { $0.userNumber == userNumber }) {
+            contact = existing
+        } else if let resolved = try await identityDirectory?.contact(forUserNumber: userNumber) {
+            contact = resolved
+            if let contactBook {
+                contacts = try await contactBook.upsert(resolved, into: contacts)
+            }
+        } else {
+            throw CarteUserFacingError.recipientNotFound(userNumber)
+        }
+        try await sendDraft(to: contact)
+    }
+
     public func refreshInbox() async throws {
-        let all = try await transport.inbox(for: currentUserID)
+        let all = try await transport.inbox(for: currentUserAddress)
         announceChange()
         inbox = all.sorted(by: { $0.deliveredAt > $1.deliveredAt })
     }
 
     public func refreshInboxAndArchive() async throws {
-        let remoteInbox = try await transport.inbox(for: currentUserID)
+        let remoteInbox = try await transport.inbox(for: currentUserAddress)
         let localArchive = try await store?.loadArchive() ?? archive
         announceChange()
         inbox = remoteInbox.filter(\.isInInbox).sorted(by: { $0.deliveredAt > $1.deliveredAt })
@@ -165,7 +214,7 @@ public final class CarteAppState {
             return
         }
 
-        try await transport.erase(deliveryID: delivery.id, for: currentUserID)
+        try await transport.erase(deliveryID: delivery.id, for: currentUserAddress)
         try await refreshInboxAndArchive()
         announceChange()
         statusMessage = "Card erased."
@@ -180,7 +229,7 @@ public final class CarteAppState {
         try await store?.saveArchive(nextArchive)
 
         archive = nextArchive.sorted(by: { $0.deliveredAt > $1.deliveredAt })
-        try await transport.erase(deliveryID: delivery.id, for: currentUserID)
+        try await transport.erase(deliveryID: delivery.id, for: currentUserAddress)
         try await refreshInboxAndArchive()
         announceChange()
         statusMessage = "Saved to your archive."

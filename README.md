@@ -7,9 +7,10 @@ Carte is a Swift-first iPhone social app modeled on postcards: compose a small c
 - A real iOS app shell in `Carte.xcodeproj` with a minimal SwiftUI tab layout: Write, Tray, Archive, and Me.
 - A Swift package split into `CarteCore` domain models and `CarteFeature` app/transport/UI features.
 - Card models for one- or two-sided cards with text, photo-token, and drawing-token side types.
-- A serverless CloudKit transit layer that writes cards and per-recipient deliveries only while they are in transit.
+- Secure iCloud-tied identities with globally assigned Carte numbers starting at 0, used as the user-facing address for sending.
+- A serverless CloudKit transit layer that writes cards and per-recipient-number deliveries only while they are in transit.
 - Local JSON profile/contact/archive persistence, so long-term card storage lives on the recipient's device rather than in CloudKit.
-- Minimalistic SwiftUI flows for onboarding, composing, long-press sending, tray review, card flipping/examining, Done-to-local-archive, erasing, and contact management.
+- Minimalistic SwiftUI flows for onboarding, numeric-keypad sending, composing, long-press sending, tray review, card flipping/examining, Done-to-local-archive, erasing, and contact management.
 - Unit tests for model invariants, transit delivery, local archive persistence, app-state validation, and contact persistence.
 
 ## Run the package tests
@@ -27,10 +28,11 @@ swift test
    - CloudKit container: `iCloud.com.example.Carte`
 4. In Apple Developer, enable iCloud/CloudKit and Push Notifications for the app id.
 5. In CloudKit Dashboard, create/deploy indexes for:
-   - `CardDelivery.recipientID`
+   - `CarteIdentity.userNumber`
+   - `CardDelivery.recipientNumber`
    - `CardDelivery.deliveredAt`
 6. Archive from Xcode and upload to TestFlight.
 
 ## Product posture
 
-Carte is intentionally minimal and intimate. CloudKit is used as a temporary delivery route, not as the user's permanent card collection. The first TestFlight path is invite-code exchange between people who already know each other, which keeps signup simple and avoids rented servers.
+Carte is intentionally minimal and intimate. CloudKit is used as a temporary delivery route, not as the user's permanent card collection. The first TestFlight path is Carte-number exchange between people who already know each other, which keeps signup simple and avoids rented servers.

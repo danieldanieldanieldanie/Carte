@@ -9,8 +9,9 @@ Carte is a quiet postcard app. No feeds, likes, metrics, or algorithmic ranking.
 ### Onboarding
 
 - User enters a display name.
-- App creates a local profile UUID that doubles as an invite code.
-- Friends exchange invite codes manually.
+- App asks CloudKit for the signed-in iCloud user record and creates one persistent Carte identity for that iCloud account.
+- App assigns the user a global Carte number, starting from 0 upward.
+- Friends exchange Carte numbers manually.
 
 ### Compose
 
@@ -18,7 +19,8 @@ Carte is a quiet postcard app. No feeds, likes, metrics, or algorithmic ranking.
 - The composer is a single paper-like surface with sparse controls.
 - Text is supported directly.
 - Photo and drawing sides are represented in the model/UI; full media upload is the next hardening step.
-- Long-pressing a contact sends the current card.
+- The primary send control is a numeric keypad; entering a Carte number sends the current card.
+- Long-pressing a saved contact number also sends the current card.
 
 ### Receive
 

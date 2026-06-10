@@ -4,6 +4,7 @@ public struct Card: Codable, Identifiable, Hashable, Sendable {
     public let id: UUID
     public let senderID: UUID
     public let senderDisplayName: String
+    public let senderNumber: Int?
     public let createdAt: Date
     public var sentAt: Date?
     public var sides: [CardSide]
@@ -13,6 +14,7 @@ public struct Card: Codable, Identifiable, Hashable, Sendable {
         id: UUID = UUID(),
         senderID: UUID,
         senderDisplayName: String,
+        senderNumber: Int? = nil,
         createdAt: Date = .now,
         sentAt: Date? = nil,
         sides: [CardSide],
@@ -23,6 +25,7 @@ public struct Card: Codable, Identifiable, Hashable, Sendable {
         self.id = id
         self.senderID = senderID
         self.senderDisplayName = senderDisplayName
+        self.senderNumber = senderNumber
         self.createdAt = createdAt
         self.sentAt = sentAt
         self.sides = sides.sorted(by: { $0.index.rawValue < $1.index.rawValue })
@@ -43,10 +46,11 @@ public extension Card {
         case erased
     }
 
-    static func draftText(senderID: UUID, senderDisplayName: String, text: String) -> Card {
+    static func draftText(senderID: UUID, senderDisplayName: String, senderNumber: Int? = nil, text: String) -> Card {
         Card(
             senderID: senderID,
             senderDisplayName: senderDisplayName,
+            senderNumber: senderNumber,
             sides: [.init(index: .front, content: .text(text))],
             lifecycle: .draft
         )

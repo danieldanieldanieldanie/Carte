@@ -5,7 +5,8 @@ import CarteFeature
 struct CarteiOSApp: App {
     @StateObject private var state = CarteAppState(
         transport: CloudKitCardTransport(),
-        store: JSONProfileStore()
+        store: JSONProfileStore(),
+        identityDirectory: CloudKitIdentityDirectory()
     )
 
     var body: some Scene {

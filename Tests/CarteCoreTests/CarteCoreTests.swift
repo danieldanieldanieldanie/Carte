@@ -22,28 +22,28 @@ final class CarteCoreTests: XCTestCase {
 
     func testInMemoryTransportSendEraseInbox() async throws {
         let transport = InMemoryCardTransport()
-        let recipient = UUID()
+        let recipient = Contact(id: UUID(), displayName: "Mina", userNumber: 0)
         let card = Card.draftText(senderID: UUID(), senderDisplayName: "Lia", text: "Hi")
 
         let deliveries = try await transport.send(card: card, to: [recipient])
         XCTAssertEqual(deliveries.count, 1)
 
-        var inbox = try await transport.inbox(for: recipient)
+        var inbox = try await transport.inbox(for: recipient.address!)
         XCTAssertEqual(inbox.count, 1)
 
-        try await transport.erase(deliveryID: deliveries[0].id, for: recipient)
-        inbox = try await transport.inbox(for: recipient)
+        try await transport.erase(deliveryID: deliveries[0].id, for: recipient.address!)
+        inbox = try await transport.inbox(for: recipient.address!)
         XCTAssertEqual(inbox.count, 0)
     }
 
     func testInMemoryTransportArchiveRemovesCardFromTransit() async throws {
         let transport = InMemoryCardTransport()
-        let recipient = UUID()
+        let recipient = Contact(id: UUID(), displayName: "Mina", userNumber: 1)
         let card = Card.draftText(senderID: UUID(), senderDisplayName: "Lia", text: "Hi")
         let delivery = try await transport.send(card: card, to: [recipient]).first!
 
-        try await transport.archive(deliveryID: delivery.id, for: recipient)
-        let all = try await transport.inbox(for: recipient)
+        try await transport.archive(deliveryID: delivery.id, for: recipient.address!)
+        let all = try await transport.inbox(for: recipient.address!)
 
         XCTAssertEqual(all.count, 0)
     }
@@ -89,7 +89,7 @@ final class CarteCoreTests: XCTestCase {
         XCTAssertEqual(state.inbox.count, 0)
         XCTAssertEqual(state.archive.count, 1)
         XCTAssertEqual(state.archive[0].card.sides.first?.content, .text("A card to keep"))
-        let remainingTransit = try await transport.inbox(for: me)
+        let remainingTransit = try await transport.inbox(for: UserAddress(id: me, number: -1))
         let persistedArchive = try await store.loadArchive()
         XCTAssertEqual(remainingTransit.count, 0)
         XCTAssertEqual(persistedArchive.count, 1)
@@ -111,6 +111,35 @@ final class CarteCoreTests: XCTestCase {
         } catch let error as CarteUserFacingError {
             XCTAssertEqual(error.errorDescription, CarteUserFacingError.emptyDraft.errorDescription)
         }
+    }
+
+    @MainActor
+    func testIdentityDirectoryAssignsSequentialNumbersAndKeypadSend() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = JSONProfileStore(directory: directory)
+        let identityDirectory = InMemoryIdentityDirectory()
+        let transport = InMemoryCardTransport()
+        let me = try await identityDirectory.ensureIdentity(displayName: "Me", existingProfile: nil)
+        let friend = try await identityDirectory.ensureIdentity(displayName: "Mina", existingProfile: nil)
+
+        XCTAssertEqual(me.userNumber, 0)
+        XCTAssertEqual(friend.userNumber, 1)
+
+        let state = CarteAppState(
+            profile: me,
+            contacts: [],
+            transport: transport,
+            store: store,
+            identityDirectory: identityDirectory
+        )
+        state.draft.frontText = "By number"
+        try await state.sendDraft(toUserNumber: 1)
+
+        let recipientAddress = try XCTUnwrap(friend.address)
+        let delivered = try await transport.inbox(for: recipientAddress)
+        XCTAssertEqual(delivered.count, 1)
+        XCTAssertEqual(delivered[0].recipientNumber, 1)
+        XCTAssertEqual(delivered[0].card.senderNumber, 0)
     }
 
     func testContactBookAddsInviteCodeContact() async throws {

@@ -10,13 +10,30 @@ public struct ContactBook: Sendable {
     public func addContact(displayName: String, inviteCode: String, to contacts: [Contact]) async throws -> [Contact] {
         let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedCode = inviteCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let number = Int(trimmedCode) {
+            return try await upsert(Contact(displayName: trimmedName.isEmpty ? "Carte #\(number)" : trimmedName, userNumber: number), into: contacts)
+        }
+
         guard let id = UUID(uuidString: trimmedCode) else {
             throw CarteUserFacingError.invalidInviteCode
         }
 
-        var next = contacts.filter { $0.id != id }
-        next.append(Contact(id: id, displayName: trimmedName.isEmpty ? "Carte Friend" : trimmedName))
-        next.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        return try await upsert(Contact(id: id, displayName: trimmedName.isEmpty ? "Carte Friend" : trimmedName), into: contacts)
+    }
+
+    public func upsert(_ contact: Contact, into contacts: [Contact]) async throws -> [Contact] {
+        var next = contacts.filter { existing in
+            existing.id != contact.id && existing.userNumber != contact.userNumber
+        }
+        next.append(contact)
+        next.sort { lhs, rhs in
+            switch (lhs.userNumber, rhs.userNumber) {
+            case let (lhs?, rhs?) where lhs != rhs:
+                return lhs < rhs
+            default:
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
+        }
         try await store.saveContacts(next)
         return next
     }
