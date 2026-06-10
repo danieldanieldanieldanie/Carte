@@ -36,7 +36,7 @@ final class CarteCoreTests: XCTestCase {
         XCTAssertEqual(inbox.count, 0)
     }
 
-    func testInMemoryTransportArchiveKeepsCardOutOfInboxBucket() async throws {
+    func testInMemoryTransportArchiveRemovesCardFromTransit() async throws {
         let transport = InMemoryCardTransport()
         let recipient = UUID()
         let card = Card.draftText(senderID: UUID(), senderDisplayName: "Lia", text: "Hi")
@@ -45,9 +45,7 @@ final class CarteCoreTests: XCTestCase {
         try await transport.archive(deliveryID: delivery.id, for: recipient)
         let all = try await transport.inbox(for: recipient)
 
-        XCTAssertEqual(all.count, 1)
-        XCTAssertTrue(all[0].isArchived)
-        XCTAssertFalse(all[0].isInInbox)
+        XCTAssertEqual(all.count, 0)
     }
 
     @MainActor
@@ -66,6 +64,35 @@ final class CarteCoreTests: XCTestCase {
         try await state.refreshInbox()
 
         XCTAssertEqual(state.inbox.count, 1)
+    }
+
+    @MainActor
+    func testDismissToArchiveStoresLocallyAndClearsTransit() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = JSONProfileStore(directory: directory)
+        let me = UUID()
+        let transport = InMemoryCardTransport()
+        let state = CarteAppState(
+            profile: UserProfile(id: me, displayName: "Me"),
+            contacts: [.init(id: me, displayName: "Me")],
+            transport: transport,
+            store: store
+        )
+
+        state.draft.frontText = "A card to keep"
+        try await state.sendDraft(to: state.contacts[0])
+        try await state.refreshInboxAndArchive()
+        let delivery = try XCTUnwrap(state.inbox.first)
+
+        try await state.dismissToArchive(delivery)
+
+        XCTAssertEqual(state.inbox.count, 0)
+        XCTAssertEqual(state.archive.count, 1)
+        XCTAssertEqual(state.archive[0].card.sides.first?.content, .text("A card to keep"))
+        let remainingTransit = try await transport.inbox(for: me)
+        let persistedArchive = try await store.loadArchive()
+        XCTAssertEqual(remainingTransit.count, 0)
+        XCTAssertEqual(persistedArchive.count, 1)
     }
 
     @MainActor

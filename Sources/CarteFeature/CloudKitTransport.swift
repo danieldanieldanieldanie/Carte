@@ -78,7 +78,7 @@ public actor CloudKitCardTransport: CardTransport {
 
     public func configureInboxPushes(for recipientID: UUID) async throws {
         try await ensureAccountAvailable()
-        let predicate = NSPredicate(format: "recipientID == %@ AND erasedAt == nil", recipientID.uuidString)
+        let predicate = NSPredicate(format: "recipientID == %@", recipientID.uuidString)
         let subscription = CKQuerySubscription(
             recordType: Self.deliveryRecordType,
             predicate: predicate,
@@ -94,36 +94,41 @@ public actor CloudKitCardTransport: CardTransport {
 
     public func send(card: Card, to recipientIDs: [UUID]) async throws -> [CardDelivery] {
         try await ensureAccountAvailable()
-        let sentCard = Card(
-            id: card.id,
-            senderID: card.senderID,
-            senderDisplayName: card.senderDisplayName,
-            createdAt: card.createdAt,
-            sentAt: .now,
-            sides: card.sides,
-            lifecycle: .sent
-        )
 
-        let cardRecord = CKRecord(recordType: Self.cardRecordType, recordID: .init(recordName: sentCard.id.uuidString))
-        cardRecord["senderID"] = sentCard.senderID.uuidString as CKRecordValue
-        cardRecord["senderDisplayName"] = sentCard.senderDisplayName as CKRecordValue
-        cardRecord["createdAt"] = sentCard.createdAt as CKRecordValue
-        if let sentAt = sentCard.sentAt {
-            cardRecord["sentAt"] = sentAt as CKRecordValue
-        }
-        cardRecord["lifecycle"] = sentCard.lifecycle.rawValue as CKRecordValue
-        cardRecord["sidesData"] = try encoder.encode(sentCard.sides) as CKRecordValue
-
-        var recordsToSave: [CKRecord] = [cardRecord]
+        var recordsToSave: [CKRecord] = []
         var deliveries: [CardDelivery] = []
         for recipientID in recipientIDs {
-            let delivery = CardDelivery(card: sentCard, recipientID: recipientID)
-            let record = CKRecord(recordType: Self.deliveryRecordType, recordID: .init(recordName: delivery.id.uuidString))
-            record["cardID"] = sentCard.id.uuidString as CKRecordValue
-            record["recipientID"] = recipientID.uuidString as CKRecordValue
-            record["senderID"] = sentCard.senderID.uuidString as CKRecordValue
-            record["deliveredAt"] = delivery.deliveredAt as CKRecordValue
-            recordsToSave.append(record)
+            let deliveryID = UUID()
+            let cardID = UUID()
+            let transientCard = Card(
+                id: cardID,
+                senderID: card.senderID,
+                senderDisplayName: card.senderDisplayName,
+                createdAt: card.createdAt,
+                sentAt: .now,
+                sides: card.sides,
+                lifecycle: .sent
+            )
+            let delivery = CardDelivery(id: deliveryID, card: transientCard, recipientID: recipientID)
+
+            let cardRecord = CKRecord(recordType: Self.cardRecordType, recordID: .init(recordName: transientCard.id.uuidString))
+            cardRecord["senderID"] = transientCard.senderID.uuidString as CKRecordValue
+            cardRecord["senderDisplayName"] = transientCard.senderDisplayName as CKRecordValue
+            cardRecord["createdAt"] = transientCard.createdAt as CKRecordValue
+            if let sentAt = transientCard.sentAt {
+                cardRecord["sentAt"] = sentAt as CKRecordValue
+            }
+            cardRecord["lifecycle"] = transientCard.lifecycle.rawValue as CKRecordValue
+            cardRecord["sidesData"] = try encoder.encode(transientCard.sides) as CKRecordValue
+
+            let deliveryRecord = CKRecord(recordType: Self.deliveryRecordType, recordID: .init(recordName: delivery.id.uuidString))
+            deliveryRecord["cardID"] = transientCard.id.uuidString as CKRecordValue
+            deliveryRecord["recipientID"] = recipientID.uuidString as CKRecordValue
+            deliveryRecord["senderID"] = transientCard.senderID.uuidString as CKRecordValue
+            deliveryRecord["deliveredAt"] = delivery.deliveredAt as CKRecordValue
+
+            recordsToSave.append(cardRecord)
+            recordsToSave.append(deliveryRecord)
             deliveries.append(delivery)
         }
 
@@ -133,7 +138,7 @@ public actor CloudKitCardTransport: CardTransport {
 
     public func inbox(for recipientID: UUID) async throws -> [CardDelivery] {
         try await ensureAccountAvailable()
-        let predicate = NSPredicate(format: "recipientID == %@ AND erasedAt == nil", recipientID.uuidString)
+        let predicate = NSPredicate(format: "recipientID == %@", recipientID.uuidString)
         let query = CKQuery(recordType: Self.deliveryRecordType, predicate: predicate)
         query.sortDescriptors = [NSSortDescriptor(key: "deliveredAt", ascending: false)]
         let matches = try await fetchAllRecords(matching: query)
@@ -142,32 +147,24 @@ public actor CloudKitCardTransport: CardTransport {
     }
 
     public func archive(deliveryID: UUID, for recipientID: UUID) async throws {
-        try await updateDelivery(deliveryID: deliveryID, recipientID: recipientID) { record in
-            record["archivedAt"] = Date() as CKRecordValue
-        }
+        try await erase(deliveryID: deliveryID, for: recipientID)
     }
 
     public func erase(deliveryID: UUID, for recipientID: UUID) async throws {
-        try await updateDelivery(deliveryID: deliveryID, recipientID: recipientID) { record in
-            record["erasedAt"] = Date() as CKRecordValue
+        try await ensureAccountAvailable()
+        let recordID = CKRecord.ID(recordName: deliveryID.uuidString)
+        let record = try await database.record(for: recordID)
+        guard (record["recipientID"] as? String) == recipientID.uuidString else { return }
+        let cardRecordID = (record["cardID"] as? String).map { CKRecord.ID(recordName: $0) }
+        var idsToDelete = [recordID]
+        if let cardRecordID {
+            idsToDelete.append(cardRecordID)
         }
+        _ = try await database.modifyRecords(saving: [], deleting: idsToDelete)
     }
 
     public func archiveExpired(for recipientID: UUID, olderThan: TimeInterval) async throws {
-        let all = try await inbox(for: recipientID)
-        let now = Date()
-        for delivery in all where delivery.erasedAt == nil && delivery.archivedAt == nil {
-            guard now.timeIntervalSince(delivery.deliveredAt) >= olderThan else { continue }
-            try await archive(deliveryID: delivery.id, for: recipientID)
-        }
-    }
-
-    private func updateDelivery(deliveryID: UUID, recipientID: UUID, mutate: (CKRecord) -> Void) async throws {
-        try await ensureAccountAvailable()
-        let record = try await database.record(for: CKRecord.ID(recordName: deliveryID.uuidString))
-        guard (record["recipientID"] as? String) == recipientID.uuidString else { return }
-        mutate(record)
-        _ = try await database.save(record)
+        // Expiry is handled locally after the card is saved; CloudKit only holds transient deliveries.
     }
 
     private func fetchAllRecords(matching query: CKQuery) async throws -> [CKRecord] {

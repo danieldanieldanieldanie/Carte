@@ -98,6 +98,7 @@ public final class CarteAppState {
         await runBusyOperation(successMessage: nil) {
             profile = try await store.loadProfile() ?? profile
             contacts = try await store.loadContacts()
+            archive = try await store.loadArchive().sorted(by: { $0.deliveredAt > $1.deliveredAt })
             try await refreshInboxAndArchive()
         }
     }
@@ -148,23 +149,46 @@ public final class CarteAppState {
     }
 
     public func refreshInboxAndArchive() async throws {
-        try await transport.archiveExpired(for: currentUserID, olderThan: 24 * 60 * 60)
-        let all = try await transport.inbox(for: currentUserID)
+        let remoteInbox = try await transport.inbox(for: currentUserID)
+        let localArchive = try await store?.loadArchive() ?? archive
         announceChange()
-        inbox = all.filter(\.isInInbox).sorted(by: { $0.deliveredAt > $1.deliveredAt })
-        archive = all.filter(\.isArchived).sorted(by: { $0.deliveredAt > $1.deliveredAt })
+        inbox = remoteInbox.filter(\.isInInbox).sorted(by: { $0.deliveredAt > $1.deliveredAt })
+        archive = localArchive.sorted(by: { $0.deliveredAt > $1.deliveredAt })
     }
 
     public func erase(_ delivery: CardDelivery) async throws {
+        if archive.contains(where: { $0.id == delivery.id }) {
+            archive.removeAll { $0.id == delivery.id }
+            try await store?.saveArchive(archive)
+            announceChange()
+            statusMessage = "Card erased."
+            return
+        }
+
         try await transport.erase(deliveryID: delivery.id, for: currentUserID)
         try await refreshInboxAndArchive()
         announceChange()
         statusMessage = "Card erased."
     }
 
-    public func archiveNow(_ delivery: CardDelivery) async throws {
-        try await transport.archive(deliveryID: delivery.id, for: currentUserID)
+    public func dismissToArchive(_ delivery: CardDelivery) async throws {
+        var archivedDelivery = delivery
+        archivedDelivery.archivedAt = .now
+
+        var nextArchive = archive.filter { $0.id != archivedDelivery.id }
+        nextArchive.insert(archivedDelivery, at: 0)
+        try await store?.saveArchive(nextArchive)
+
+        archive = nextArchive.sorted(by: { $0.deliveredAt > $1.deliveredAt })
+        try await transport.erase(deliveryID: delivery.id, for: currentUserID)
         try await refreshInboxAndArchive()
+        announceChange()
+        statusMessage = "Saved to your archive."
+    }
+
+    @available(*, deprecated, message: "Use dismissToArchive(_:) so archived cards are stored locally and removed from transit.")
+    public func archiveNow(_ delivery: CardDelivery) async throws {
+        try await dismissToArchive(delivery)
     }
 
     public func setStatusMessage(_ message: String?) {

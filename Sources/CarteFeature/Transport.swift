@@ -36,34 +36,20 @@ public actor InMemoryCardTransport: CardTransport {
     }
 
     public func inbox(for recipientID: UUID) async throws -> [CardDelivery] {
-        deliveries[recipientID, default: []].filter { $0.erasedAt == nil }
+        deliveries[recipientID, default: []]
     }
 
     public func archive(deliveryID: UUID, for recipientID: UUID) async throws {
-        guard var entries = deliveries[recipientID] else { return }
-        guard let idx = entries.firstIndex(where: { $0.id == deliveryID }) else { return }
-        entries[idx].archivedAt = .now
-        deliveries[recipientID] = entries
+        try await erase(deliveryID: deliveryID, for: recipientID)
     }
 
     public func erase(deliveryID: UUID, for recipientID: UUID) async throws {
         guard var entries = deliveries[recipientID] else { return }
-        guard let idx = entries.firstIndex(where: { $0.id == deliveryID }) else { return }
-        entries[idx].erasedAt = .now
+        entries.removeAll { $0.id == deliveryID }
         deliveries[recipientID] = entries
     }
 
     public func archiveExpired(for recipientID: UUID, olderThan: TimeInterval) async throws {
-        guard var entries = deliveries[recipientID] else { return }
-        let now = Date()
-        entries = entries.map { delivery in
-            guard delivery.erasedAt == nil, delivery.archivedAt == nil else { return delivery }
-            let age = now.timeIntervalSince(delivery.deliveredAt)
-            guard age >= olderThan else { return delivery }
-            var updated = delivery
-            updated.archivedAt = now
-            return updated
-        }
-        deliveries[recipientID] = entries
+        // Expiry is a local-library concern now; transports only hold cards while they are in transit.
     }
 }

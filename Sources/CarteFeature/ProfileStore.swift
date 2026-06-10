@@ -5,11 +5,14 @@ public protocol ProfileStore: Sendable {
     func saveProfile(_ profile: UserProfile) async throws
     func loadContacts() async throws -> [Contact]
     func saveContacts(_ contacts: [Contact]) async throws
+    func loadArchive() async throws -> [CardDelivery]
+    func saveArchive(_ archive: [CardDelivery]) async throws
 }
 
 public actor JSONProfileStore: ProfileStore {
     private let profileURL: URL
     private let contactsURL: URL
+    private let archiveURL: URL
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
@@ -17,6 +20,7 @@ public actor JSONProfileStore: ProfileStore {
         let base = directory ?? URL.carteApplicationSupportDirectory()
         self.profileURL = base.appendingPathComponent("profile.json")
         self.contactsURL = base.appendingPathComponent("contacts.json")
+        self.archiveURL = base.appendingPathComponent("archive.json")
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     }
 
@@ -42,6 +46,19 @@ public actor JSONProfileStore: ProfileStore {
         try ensureDirectoryExists()
         let data = try encoder.encode(contacts.sorted { $0.displayName < $1.displayName })
         try data.write(to: contactsURL, options: [.atomic])
+    }
+
+    public func loadArchive() async throws -> [CardDelivery] {
+        guard FileManager.default.fileExists(atPath: archiveURL.path) else { return [] }
+        let data = try Data(contentsOf: archiveURL)
+        return try decoder.decode([CardDelivery].self, from: data)
+    }
+
+    public func saveArchive(_ archive: [CardDelivery]) async throws {
+        try ensureDirectoryExists()
+        let sorted = archive.sorted { $0.deliveredAt > $1.deliveredAt }
+        let data = try encoder.encode(sorted)
+        try data.write(to: archiveURL, options: [.atomic])
     }
 
     private func ensureDirectoryExists() throws {

@@ -227,7 +227,7 @@ public struct InboxScreen: View {
     public var body: some View {
         NavigationStack {
             CardList(deliveries: state.inbox, emptyText: "your in-tray is empty") { delivery in
-                Button("Archive") { Task { try? await state.archiveNow(delivery) } }
+                Button("Done") { Task { try? await state.dismissToArchive(delivery) } }
                 Button("Erase", role: .destructive) { Task { try? await state.erase(delivery) } }
             }
             .navigationTitle("Tray")
@@ -245,7 +245,7 @@ public struct ArchiveScreen: View {
 
     public var body: some View {
         NavigationStack {
-            CardList(deliveries: state.archive, emptyText: "no saved cards yet") { delivery in
+            CardList(deliveries: state.archive, emptyText: "dismissed cards will be saved here") { delivery in
                 Button("Erase", role: .destructive) { Task { try? await state.erase(delivery) } }
             }
             .navigationTitle("Archive")
@@ -316,7 +316,7 @@ public struct CardFaceView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                if card.hasBackSide { Text("tap to flip").font(.caption2).foregroundStyle(.tertiary) }
+                if card.hasBackSide { Text("tap to examine").font(.caption2).foregroundStyle(.tertiary) }
             }
             content(side?.content)
             Spacer(minLength: 0)

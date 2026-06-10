@@ -24,14 +24,15 @@ Carte is a quiet postcard app. No feeds, likes, metrics, or algorithmic ranking.
 
 - Incoming cards appear in the Tray.
 - A card displays the sender name and one side at a time.
-- Tapping flips a two-sided card.
-- Erase removes the delivery from the visible tray/archive.
-- Archive saves a card outside the tray.
+- Tapping flips/examines a two-sided card.
+- **Done** dismisses the examined card from the Tray, stores it in the recipient's local archive, and removes the in-transit CloudKit copy.
+- **Erase** removes a tray card without archiving it.
 
 ### Archive
 
-- Archive is a simple chronological list of saved cards.
-- Cards can still be erased from the archive.
+- Archive is a local chronological list of dismissed cards.
+- Archive contents are not CloudKit-backed permanent storage.
+- Cards can be erased from the archive, which removes the local copy.
 
 ### Visual design
 
