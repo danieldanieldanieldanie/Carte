@@ -36,3 +36,7 @@ swift test
 ## Product posture
 
 Carte is intentionally minimal and intimate. CloudKit is used as a temporary delivery route, not as the user's permanent card collection. The first TestFlight path is Carte-number exchange between people who already know each other, which keeps signup simple and avoids rented servers.
+
+## Web prototype
+
+A separate Firebase web/PWA prototype lives in `Web/CarteWeb`. It is intentionally isolated from the Swift/iPhone app so this repository can continue to preserve the native iOS direction while the web version moves quickly without Xcode/TestFlight.

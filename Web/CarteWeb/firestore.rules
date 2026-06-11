@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    function isTransitParty() {
+      return signedIn()
+        && (resource.data.senderUid == request.auth.uid || resource.data.recipientUid == request.auth.uid);
+    }
+
+    match /profiles/{uid} {
+      allow read: if signedIn();
+      allow create: if isOwner(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.username is string
+        && request.resource.data.number is int;
+      allow update: if false;
+      allow delete: if isOwner(uid);
+    }
+
+    match /usernames/{username} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /system/{document} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    match /deliveries/{deliveryId} {
+      allow read: if isTransitParty();
+      allow create: if signedIn()
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.recipientUid is string
+        && request.resource.data.recipientNumber is int;
+      allow delete: if isTransitParty();
+      allow update: if false;
+    }
+  }
+}
