@@ -271,6 +271,10 @@ public final class CarteAppState {
         }
     }
 
+    public func localPDFArchiveDirectory() -> URL? {
+        try? postcardExporter?.archiveDirectory()
+    }
+
     public func setStatusMessage(_ message: String?) {
         announceChange()
         statusMessage = message

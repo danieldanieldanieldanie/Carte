@@ -1,46 +1,29 @@
 # Carte technical plan
 
-## Current architecture
+## Current target
 
-- **iOS app:** `Carte.xcodeproj` contains a SwiftUI application target for TestFlight handoff.
-- **Core package:** `CarteCore` owns card/domain invariants.
-- **Feature package:** `CarteFeature` owns app state, transports, profile/contact/archive storage, CloudKit integration, and SwiftUI screens.
-- **Secure identity:** `CloudKitIdentityDirectory` binds one Carte profile to CloudKit's `userRecordID()` for the signed-in iCloud account, then assigns a global integer Carte number from a CloudKit counter.
-- **Serverless transit:** `CloudKitCardTransport` uses CloudKit only as a temporary delivery queue addressed by Carte number. Once the recipient dismisses an examined tray card, the app saves it to the local JSON archive and deletes the CloudKit transit records.
-- **Local library:** `JSONProfileStore` persists `profile.json`, `contacts.json`, and `archive.json` in Application Support.
+Carte is now native iPhone only in this repository. Firebase and the web prototype have been removed. The app is designed to be opened in Xcode, pointed at a real Apple Developer team / CloudKit container, and sent to TestFlight without renting servers.
 
-## Card lifecycle
+## Architecture
 
-1. Sender composes a card locally.
-2. The sender enters the recipient's Carte number on the keypad.
-3. `IdentityDirectory` resolves that number to the recipient profile/contact.
-4. `CardTransport.send` creates a transient per-recipient-number delivery copy in CloudKit.
-5. Recipient refreshes the Tray and examines the card.
-6. Recipient taps **Done**.
-7. `CarteAppState.dismissToArchive(_:)` stamps `archivedAt`, writes the card to local archive storage, and acknowledges the transit delivery by deleting it remotely.
-8. Archive browsing reads from local storage only.
-9. Erasing a tray card deletes the transit copy without archiving; erasing an archive card deletes the local copy only.
+- `CarteCore`: domain models (`Card`, `CardSide`) and basic invariants.
+- `CarteFeature`: app state, SwiftUI UI, CloudKit transport, CloudKit identity directory, local JSON stores, attachment storage, and PDF export.
+- `App/CarteiOS`: app entrypoint, Info.plist, entitlements, and Xcode target.
 
-## CloudKit records
-
-CloudKit stores these records only while a card is in transit.
+## CloudKit record model
 
 ### `CarteIdentity`
 
-- recordName: CloudKit iCloud user record name
-- `appUserID: String` UUID used by local card models
+- recordName: iCloud user record name
+- `appUserID: String`
 - `displayName: String`
-- `inviteCode: String` legacy UUID invite string
-- `userNumber: Int64` global Carte address, allocated from 0 upward
-- `iCloudUserRecordName: String`
-- `secureIdentityVersion: Int64`
+- `userNumber: Int64`
 - `createdAt: Date`
-- `updatedAt: Date`
 
 ### `CarteNumberCounter`
 
 - recordName: `global`
-- `nextNumber: Int64` next Carte number to assign
+- `nextNumber: Int64`
 
 ### `Card`
 
@@ -52,6 +35,7 @@ CloudKit stores these records only while a card is in transit.
 - `sentAt: Date`
 - `lifecycle: String`
 - `sidesData: Data` JSON-encoded `[CardSide]`
+- `photoAsset_<assetID>: CKAsset` for any photo side
 
 ### `CardDelivery`
 
@@ -61,6 +45,27 @@ CloudKit stores these records only while a card is in transit.
 - `recipientNumber: Int64` primary address
 - `senderID: String`
 - `deliveredAt: Date`
+
+## Front end
+
+The SwiftUI front end includes:
+
+- onboarding against CloudKit/iCloud identity,
+- a Write tab with front/back side switching,
+- text editing on either side,
+- photo-library image selection for either side,
+- inline postcard preview,
+- keypad addressing by Carte number,
+- long-press sending to saved contacts,
+- Tray and Archive grids,
+- a full-screen reader with flip, Done, and Erase actions,
+- Me/settings for Carte number, contacts, and the local PDF path.
+
+## Local storage
+
+- Profile, contacts, and archive metadata are JSON in Application Support.
+- Photo attachments are cached in Application Support/Carte/Attachments.
+- PDFs are written to Documents/Carte Postcards so Files / Finder can locate them.
 
 ## Before TestFlight
 
@@ -72,15 +77,7 @@ CloudKit stores these records only while a card is in transit.
 
 ## Remaining polish after first TestFlight
 
-- Add full PencilKit drawing canvas, thumbnail rendering, and CKAsset transit for drawings.
 - Add image compression/downsampling controls for very large photo-library selections.
 - Add block/report controls and sender allow-lists.
+- Add App Store artwork / final icon set in Xcode.
 - Add UI tests and CloudKit integration tests that run on macOS/Xcode CI.
-
-## CloudKit-first postcard composition update
-
-Carte is officially CloudKit-first for the native iPhone app. The design follows the useful shape of `adamwulf/cloudkit-manager`: use CloudKit as a simple iCloud-backed message transit layer, verify the active iCloud account, send text plus binary assets as CloudKit records/assets, fetch new deliveries, and remove transit records after receipt. We do not vendor the Objective-C framework because the current app is Swift/SwiftUI-first and already has a typed `CardTransport` abstraction, but the CloudKit transport now mirrors the same message-plus-image pattern.
-
-Composition now supports two editable postcard sides. Each side can contain text or a selected photo. Photos are imported from the user's photo library into Carte's local Application Support attachment directory and attached to CloudKit `Card` records as `CKAsset` values while in transit.
-
-When a recipient taps Done in the in-tray, Carte writes the postcard to a local PDF before removing the CloudKit transit records. PDFs are saved in the user's Documents directory under `Carte Postcards`, so the files are visible through the Files app's On My iPhone storage for the app.

@@ -1,14 +1,14 @@
-# Carte iOS app handoff
+# Carte iOS target
 
-Open `Carte.xcodeproj` in Xcode, set your Apple Developer Team, and replace the placeholder bundle/container identifiers:
+Open `Carte.xcodeproj` in Xcode to run the native iPhone app.
 
-- Bundle identifier: `com.example.Carte`
-- CloudKit container: `iCloud.com.example.Carte`
+## Required setup
 
-Before TestFlight, create matching identifiers in the Apple Developer portal, enable iCloud + CloudKit + Push Notifications, and deploy the CloudKit schema from Development to Production after creating indexes for `CarteIdentity.userNumber`, `CardDelivery.recipientNumber`, and `CardDelivery.deliveredAt`.
+- Replace `com.example.Carte` and `iCloud.com.example.Carte` with your real bundle and CloudKit container identifiers.
+- Set your Apple Developer Team.
+- Enable iCloud/CloudKit and Push Notifications for the app id.
+- Run on a real iPhone signed into iCloud to validate account identity, CloudKit identity allocation, delivery, and push behavior.
 
-CloudKit stores the secure iCloud-tied identity/number directory and is otherwise only the transit layer. Cards move to `archive.json` on the recipient device when the recipient taps Done in the Tray, and the CloudKit delivery/card records are deleted.
+## Photo and PDF behavior
 
-## Photo and PDF permissions
-
-The iOS target includes photo-library usage copy because the composer can pick gallery photos for either side of a postcard. Received postcards are exported as PDFs to the app's Documents/`Carte Postcards` directory when the recipient taps Done; use the Files app to inspect exported cards on device.
+The composer uses the photo-library permission string in `Info.plist` so users can place gallery photos on either side of a postcard. Received postcards are exported as PDFs to Documents/`Carte Postcards` when the recipient taps Done. `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` are enabled so those files are easy to inspect through Files / Finder.

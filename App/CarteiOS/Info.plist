@@ -12,6 +12,10 @@
 	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Carte can use a photo as one side of a card.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
