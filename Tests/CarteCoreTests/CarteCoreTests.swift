@@ -142,6 +142,43 @@ final class CarteCoreTests: XCTestCase {
         XCTAssertEqual(delivered[0].card.senderNumber, 0)
     }
 
+    func testAttachmentStoreSavesPhotoData() throws {
+        let assetID = UUID().uuidString
+        let data = Data([0x01, 0x02, 0x03])
+
+        let savedID = try CarteAttachmentStore.savePhotoData(data, assetID: assetID)
+        let url = try XCTUnwrap(CarteAttachmentStore.existingPhotoURL(for: savedID))
+
+        XCTAssertEqual(savedID, assetID)
+        XCTAssertEqual(try Data(contentsOf: url), data)
+    }
+
+    @MainActor
+    func testDismissToArchiveExportsPDFThroughConfiguredExporter() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = JSONProfileStore(directory: directory)
+        let exporter = RecordingPostcardExporter(directory: directory.appendingPathComponent("PDFs", isDirectory: true))
+        let me = UUID()
+        let transport = InMemoryCardTransport()
+        let state = CarteAppState(
+            profile: UserProfile(id: me, displayName: "Me"),
+            contacts: [.init(id: me, displayName: "Me")],
+            transport: transport,
+            store: store,
+            postcardExporter: exporter
+        )
+
+        state.draft.frontText = "Export me"
+        try await state.sendDraft(to: state.contacts[0])
+        try await state.refreshInboxAndArchive()
+        let delivery = try XCTUnwrap(state.inbox.first)
+
+        try await state.dismissToArchive(delivery)
+
+        let exported = exporter.exportedIDs
+        XCTAssertEqual(exported, [delivery.id])
+    }
+
     func testContactBookAddsInviteCodeContact() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let store = JSONProfileStore(directory: directory)
@@ -153,5 +190,27 @@ final class CarteCoreTests: XCTestCase {
         XCTAssertEqual(contacts, [Contact(id: friendID, displayName: "Mina")])
         let persisted = try await store.loadContacts()
         XCTAssertEqual(persisted, contacts)
+    }
+}
+
+
+private final class RecordingPostcardExporter: LocalPostcardExporter, @unchecked Sendable {
+    private let directoryURL: URL
+    private(set) var exportedIDs: [UUID] = []
+
+    init(directory: URL) {
+        self.directoryURL = directory
+    }
+
+    func archiveDirectory() throws -> URL {
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        return directoryURL
+    }
+
+    func export(_ delivery: CardDelivery) async throws -> URL {
+        exportedIDs.append(delivery.id)
+        let url = try archiveDirectory().appendingPathComponent(delivery.id.uuidString).appendingPathExtension("pdf")
+        try Data("pdf".utf8).write(to: url)
+        return url
     }
 }

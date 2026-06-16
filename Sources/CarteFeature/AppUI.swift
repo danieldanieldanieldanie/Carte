@@ -91,7 +91,8 @@ public struct ComposeScreen: View {
                     CardEditor(
                         title: showingBack ? "back" : "front",
                         text: showingBack ? binding(\.backText) : binding(\.frontText),
-                        attachmentKind: showingBack ? state.draft.backAttachmentKind : state.draft.frontAttachmentKind
+                        attachmentKind: showingBack ? state.draft.backAttachmentKind : state.draft.frontAttachmentKind,
+                        assetID: showingBack ? state.draft.backAttachmentID : state.draft.frontAttachmentID
                     )
 
                     HStack(spacing: 10) {
@@ -103,12 +104,12 @@ public struct ComposeScreen: View {
                         }
                         .buttonStyle(CartePillStyle())
                         .onChange(of: selectedPhoto) { _, newValue in
-                            guard newValue != nil else { return }
-                            attach(kind: .photo)
+                            guard let newValue else { return }
+                            Task { await attachPhoto(newValue) }
                         }
                         #endif
-                        Button { attach(kind: .drawing) } label: {
-                            Label("drawing", systemImage: "scribble")
+                        Button { clearAttachment() } label: {
+                            Label("clear media", systemImage: "xmark.circle")
                         }
                         .buttonStyle(CartePillStyle())
                     }
@@ -146,15 +147,20 @@ public struct ComposeScreen: View {
         )
     }
 
-    private func attach(kind: ComposeDraft.AttachmentKind) {
-        let token = UUID().uuidString
-        if showingBack {
-            state.draft.backAttachmentID = token
-            state.draft.backAttachmentKind = kind
-        } else {
-            state.draft.frontAttachmentID = token
-            state.draft.frontAttachmentKind = kind
+    #if canImport(PhotosUI)
+    private func attachPhoto(_ item: PhotosPickerItem) async {
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else { return }
+            try state.savePhotoAttachment(data: data, to: showingBack ? .back : .front)
+            state.setStatusMessage("Photo attached to the \(showingBack ? "back" : "front").")
+        } catch {
+            state.setStatusMessage(error.localizedDescription)
         }
+    }
+    #endif
+
+    private func clearAttachment() {
+        state.clearAttachment(on: showingBack ? .back : .front)
     }
 
     private func send(to contact: Contact) async {
@@ -223,6 +229,7 @@ private struct CardEditor: View {
     let title: String
     @Binding var text: String
     let attachmentKind: ComposeDraft.AttachmentKind?
+    let assetID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -232,7 +239,11 @@ private struct CardEditor: View {
             TextField("write something small", text: $text, axis: .vertical)
                 .lineLimit(8...14)
                 .font(.system(size: 22, weight: .regular, design: .serif))
-            if let attachmentKind {
+            if let assetID, attachmentKind == .photo {
+                CartePhotoView(assetID: assetID)
+                    .frame(maxHeight: 260)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            } else if let attachmentKind {
                 Label(attachmentKind.rawValue, systemImage: attachmentKind == .photo ? "photo" : "scribble")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -397,10 +408,8 @@ public struct CardFaceView: View {
             Text(text)
                 .font(.system(size: 22, weight: .regular, design: .serif))
                 .foregroundStyle(.primary)
-        case .photo:
-            Label("photo card", systemImage: "photo")
-                .font(.title3)
-                .foregroundStyle(.secondary)
+        case .photo(let assetID):
+            CartePhotoView(assetID: assetID)
         case .drawing:
             Label("drawing card", systemImage: "scribble")
                 .font(.title3)
@@ -408,6 +417,35 @@ public struct CardFaceView: View {
         case .none:
             EmptyView()
         }
+    }
+}
+
+@available(iOS 18.0, macOS 15.0, *)
+private struct CartePhotoView: View {
+    let assetID: String
+
+    var body: some View {
+        #if canImport(UIKit)
+        if let image = CarteImageLoader.image(for: assetID) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity, alignment: .center)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+        } else {
+            missingPhoto
+        }
+        #else
+        missingPhoto
+        #endif
+    }
+
+    private var missingPhoto: some View {
+        Label("photo unavailable", systemImage: "photo")
+            .font(.title3)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 180)
+            .background(RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.42)))
     }
 }
 

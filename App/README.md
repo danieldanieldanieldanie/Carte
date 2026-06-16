@@ -8,3 +8,7 @@ Open `Carte.xcodeproj` in Xcode, set your Apple Developer Team, and replace the 
 Before TestFlight, create matching identifiers in the Apple Developer portal, enable iCloud + CloudKit + Push Notifications, and deploy the CloudKit schema from Development to Production after creating indexes for `CarteIdentity.userNumber`, `CardDelivery.recipientNumber`, and `CardDelivery.deliveredAt`.
 
 CloudKit stores the secure iCloud-tied identity/number directory and is otherwise only the transit layer. Cards move to `archive.json` on the recipient device when the recipient taps Done in the Tray, and the CloudKit delivery/card records are deleted.
+
+## Photo and PDF permissions
+
+The iOS target includes photo-library usage copy because the composer can pick gallery photos for either side of a postcard. Received postcards are exported as PDFs to the app's Documents/`Carte Postcards` directory when the recipient taps Done; use the Files app to inspect exported cards on device.

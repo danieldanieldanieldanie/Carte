@@ -57,6 +57,7 @@ public final class CarteAppState {
     private let identityDirectory: (any IdentityDirectory)?
     private let composer = CardComposer()
     private let contactBook: ContactBook?
+    private let postcardExporter: (any LocalPostcardExporter)?
 
     public var currentUserID: UUID { profile?.id ?? fallbackUserID }
     public var currentUserNumber: Int? { profile?.userNumber }
@@ -81,6 +82,7 @@ public final class CarteAppState {
         self.store = nil
         self.identityDirectory = nil
         self.contactBook = nil
+        self.postcardExporter = nil
         self.fallbackUserID = currentUserID
         self.fallbackDisplayName = currentUserDisplayName
     }
@@ -90,7 +92,8 @@ public final class CarteAppState {
         contacts: [Contact] = [],
         transport: any CardTransport,
         store: (any ProfileStore)? = nil,
-        identityDirectory: (any IdentityDirectory)? = nil
+        identityDirectory: (any IdentityDirectory)? = nil,
+        postcardExporter: (any LocalPostcardExporter)? = nil
     ) {
         self.profile = profile
         self.contacts = contacts
@@ -98,6 +101,7 @@ public final class CarteAppState {
         self.store = store
         self.identityDirectory = identityDirectory
         self.contactBook = store.map(ContactBook.init(store:))
+        self.postcardExporter = postcardExporter
         self.fallbackUserID = profile?.id ?? UUID()
         self.fallbackDisplayName = profile?.displayName ?? "Carte User"
     }
@@ -224,6 +228,8 @@ public final class CarteAppState {
         var archivedDelivery = delivery
         archivedDelivery.archivedAt = .now
 
+        _ = try await postcardExporter?.export(archivedDelivery)
+
         var nextArchive = archive.filter { $0.id != archivedDelivery.id }
         nextArchive.insert(archivedDelivery, at: 0)
         try await store?.saveArchive(nextArchive)
@@ -238,6 +244,31 @@ public final class CarteAppState {
     @available(*, deprecated, message: "Use dismissToArchive(_:) so archived cards are stored locally and removed from transit.")
     public func archiveNow(_ delivery: CardDelivery) async throws {
         try await dismissToArchive(delivery)
+    }
+
+    public func savePhotoAttachment(data: Data, to side: CardSide.Index) throws {
+        let assetID = try CarteAttachmentStore.savePhotoData(data)
+        announceChange()
+        switch side {
+        case .front:
+            draft.frontAttachmentID = assetID
+            draft.frontAttachmentKind = .photo
+        case .back:
+            draft.backAttachmentID = assetID
+            draft.backAttachmentKind = .photo
+        }
+    }
+
+    public func clearAttachment(on side: CardSide.Index) {
+        announceChange()
+        switch side {
+        case .front:
+            draft.frontAttachmentID = nil
+            draft.frontAttachmentKind = nil
+        case .back:
+            draft.backAttachmentID = nil
+            draft.backAttachmentKind = nil
+        }
     }
 
     public func setStatusMessage(_ message: String?) {

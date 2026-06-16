@@ -72,7 +72,15 @@ CloudKit stores these records only while a card is in transit.
 
 ## Remaining polish after first TestFlight
 
-- Upload real selected photo/drawing data as `CKAsset` records while in transit, then cache the downloaded asset locally with the archive entry.
-- Add full PencilKit editing canvas and thumbnail rendering.
+- Add full PencilKit drawing canvas, thumbnail rendering, and CKAsset transit for drawings.
+- Add image compression/downsampling controls for very large photo-library selections.
 - Add block/report controls and sender allow-lists.
 - Add UI tests and CloudKit integration tests that run on macOS/Xcode CI.
+
+## CloudKit-first postcard composition update
+
+Carte is officially CloudKit-first for the native iPhone app. The design follows the useful shape of `adamwulf/cloudkit-manager`: use CloudKit as a simple iCloud-backed message transit layer, verify the active iCloud account, send text plus binary assets as CloudKit records/assets, fetch new deliveries, and remove transit records after receipt. We do not vendor the Objective-C framework because the current app is Swift/SwiftUI-first and already has a typed `CardTransport` abstraction, but the CloudKit transport now mirrors the same message-plus-image pattern.
+
+Composition now supports two editable postcard sides. Each side can contain text or a selected photo. Photos are imported from the user's photo library into Carte's local Application Support attachment directory and attached to CloudKit `Card` records as `CKAsset` values while in transit.
+
+When a recipient taps Done in the in-tray, Carte writes the postcard to a local PDF before removing the CloudKit transit records. PDFs are saved in the user's Documents directory under `Carte Postcards`, so the files are visible through the Files app's On My iPhone storage for the app.

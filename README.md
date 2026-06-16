@@ -40,3 +40,7 @@ Carte is intentionally minimal and intimate. CloudKit is used as a temporary del
 ## Web prototype
 
 A separate Firebase web/PWA prototype lives in `Web/CarteWeb`. It is intentionally isolated from the Swift/iPhone app so this repository can continue to preserve the native iOS direction while the web version moves quickly without Xcode/TestFlight.
+
+## Native iPhone direction
+
+The native iPhone app is now the primary direction again. CloudKit remains the official serverless transport, following the same message-plus-asset approach demonstrated by `adamwulf/cloudkit-manager`, while keeping the implementation Swift-native. The composer supports two editable postcard sides and photo-library images; received cards are exported as local PDFs in the app's Documents/`Carte Postcards` folder when dismissed from the in-tray.

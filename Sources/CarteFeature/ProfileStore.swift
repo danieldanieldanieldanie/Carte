@@ -66,11 +66,3 @@ public actor JSONProfileStore: ProfileStore {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 }
-
-private extension URL {
-    static func carteApplicationSupportDirectory() -> URL {
-        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        return root.appendingPathComponent("Carte", isDirectory: true)
-    }
-}

@@ -29,6 +29,7 @@ public actor CloudKitCardTransport: CardTransport {
     public static let deliveryRecordType = "CardDelivery"
     public static let profileRecordType = "CarteProfile"
     public static let inboxSubscriptionIDPrefix = "CarteInbox-"
+    private static let photoAssetFieldPrefix = "photoAsset_"
 
     private let container: CKContainer
     private let database: CKDatabase
@@ -106,6 +107,7 @@ public actor CloudKitCardTransport: CardTransport {
                 id: cardID,
                 senderID: card.senderID,
                 senderDisplayName: card.senderDisplayName,
+                senderNumber: card.senderNumber,
                 createdAt: card.createdAt,
                 sentAt: .now,
                 sides: card.sides,
@@ -125,6 +127,7 @@ public actor CloudKitCardTransport: CardTransport {
             }
             cardRecord["lifecycle"] = transientCard.lifecycle.rawValue as CKRecordValue
             cardRecord["sidesData"] = try encoder.encode(transientCard.sides) as CKRecordValue
+            try Self.attachPhotoAssets(from: transientCard, to: cardRecord)
 
             let deliveryRecord = CKRecord(recordType: Self.deliveryRecordType, recordID: .init(recordName: delivery.id.uuidString))
             deliveryRecord["cardID"] = transientCard.id.uuidString as CKRecordValue
@@ -212,6 +215,7 @@ public actor CloudKitCardTransport: CardTransport {
 
             let cardRecord = try await database.record(for: CKRecord.ID(recordName: cardID.uuidString))
             let card = try Self.decodeCard(from: cardRecord)
+            try Self.persistPhotoAssets(from: cardRecord, for: card)
             deliveries.append(
                 CardDelivery(
                     id: UUID(uuidString: deliveryRecord.recordID.recordName) ?? UUID(),
@@ -225,6 +229,26 @@ public actor CloudKitCardTransport: CardTransport {
             )
         }
         return deliveries
+    }
+
+    private static func photoAssetFieldName(for assetID: String) -> String {
+        photoAssetFieldPrefix + assetID.replacingOccurrences(of: "-", with: "_")
+    }
+
+    private static func attachPhotoAssets(from card: Card, to record: CKRecord) throws {
+        for side in card.sides {
+            guard case .photo(let assetID) = side.content, let url = CarteAttachmentStore.existingPhotoURL(for: assetID) else { continue }
+            record[photoAssetFieldName(for: assetID)] = CKAsset(fileURL: url)
+        }
+    }
+
+    private static func persistPhotoAssets(from record: CKRecord, for card: Card) throws {
+        for side in card.sides {
+            guard case .photo(let assetID) = side.content else { continue }
+            guard CarteAttachmentStore.existingPhotoURL(for: assetID) == nil else { continue }
+            guard let asset = record[photoAssetFieldName(for: assetID)] as? CKAsset, let fileURL = asset.fileURL else { continue }
+            _ = try CarteAttachmentStore.importPhotoFile(from: fileURL, assetID: assetID)
+        }
     }
 
     private static func decodeProfile(from record: CKRecord) throws -> UserProfile {

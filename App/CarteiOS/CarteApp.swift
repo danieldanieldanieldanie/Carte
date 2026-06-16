@@ -6,7 +6,8 @@ struct CarteiOSApp: App {
     @StateObject private var state = CarteAppState(
         transport: CloudKitCardTransport(),
         store: JSONProfileStore(),
-        identityDirectory: CloudKitIdentityDirectory()
+        identityDirectory: CloudKitIdentityDirectory(),
+        postcardExporter: PostcardPDFExporter()
     )
 
     var body: some Scene {
