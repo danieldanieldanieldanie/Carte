@@ -38,3 +38,7 @@ swift test
 ## Product posture
 
 Carte is intentionally minimal and intimate. There is no Firebase project and no custom server to rent. CloudKit is the official no-server transit layer, inspired by the message-plus-asset pattern in `adamwulf/cloudkit-manager` but implemented directly in Swift around Carte's own typed transport. Long-term storage lives on the recipient's iPhone.
+
+## Identity and delivery safety
+
+Carte numbers are allocated through CloudKit from `CarteNumberCounter/global`. The first new iCloud account receives #0; the counter then advances so the next account receives #1, and so on. The counter update and `CarteIdentity` creation are committed atomically, and concurrent signups retry on CloudKit conflicts. Card sends also commit the transient `Card` plus `CardDelivery` records atomically so a recipient should not receive a delivery pointing at a missing card.

@@ -87,21 +87,12 @@ public actor CloudKitIdentityDirectory: IdentityDirectory {
             return try Self.decodeProfile(from: saved)
         }
 
-        let number = try await allocateNextNumber()
-        let profile = UserProfile(
-            id: existingProfile?.id ?? UUID(),
+        return try await allocateNumberAndCreateIdentity(
+            recordID: recordID,
+            iCloudRecordName: iCloudRecordID.recordName,
             displayName: resolvedName,
-            inviteCode: existingProfile?.inviteCode,
-            userNumber: number,
-            iCloudUserRecordName: iCloudRecordID.recordName,
-            secureIdentityVersion: 1,
-            createdAt: existingProfile?.createdAt ?? .now
+            existingProfile: existingProfile
         )
-
-        let record = CKRecord(recordType: Self.identityRecordType, recordID: recordID)
-        apply(profile: profile, iCloudRecordName: iCloudRecordID.recordName, to: record)
-        let saved = try await database.save(record)
-        return try Self.decodeProfile(from: saved)
     }
 
     public func contact(forUserNumber userNumber: Int) async throws -> Contact? {
@@ -125,16 +116,39 @@ public actor CloudKitIdentityDirectory: IdentityDirectory {
         }
     }
 
-    private func allocateNextNumber() async throws -> Int {
+    private func allocateNumberAndCreateIdentity(
+        recordID: CKRecord.ID,
+        iCloudRecordName: String,
+        displayName: String,
+        existingProfile: UserProfile?
+    ) async throws -> UserProfile {
         while true {
             do {
                 let counter = try await fetchOrCreateCounter()
                 let next = (counter["nextNumber"] as? NSNumber)?.int64Value ?? 0
                 counter["nextNumber"] = NSNumber(value: next + 1) as CKRecordValue
-                _ = try await database.save(counter)
-                return Int(next)
+
+                let profile = UserProfile(
+                    id: existingProfile?.id ?? UUID(),
+                    displayName: displayName,
+                    inviteCode: existingProfile?.inviteCode,
+                    userNumber: Int(next),
+                    iCloudUserRecordName: iCloudRecordName,
+                    secureIdentityVersion: 1,
+                    createdAt: existingProfile?.createdAt ?? .now
+                )
+                let identity = CKRecord(recordType: Self.identityRecordType, recordID: recordID)
+                apply(profile: profile, iCloudRecordName: iCloudRecordName, to: identity)
+
+                try await modifyRecordsAtomically(saving: [counter, identity])
+                return profile
             } catch let error as CKError where error.code == .serverRecordChanged {
                 continue
+            } catch let error as CKError where error.code == .constraintViolation {
+                if let existing = try await fetchExistingIdentity(recordID: recordID) {
+                    return try Self.decodeProfile(from: existing)
+                }
+                throw error
             }
         }
     }
@@ -151,6 +165,19 @@ public actor CloudKitIdentityDirectory: IdentityDirectory {
             } catch let saveError as CKError where saveError.code == .serverRecordChanged || saveError.code == .constraintViolation {
                 return try await database.record(for: recordID)
             }
+        }
+    }
+
+
+    private func modifyRecordsAtomically(saving records: [CKRecord], deleting recordIDs: [CKRecord.ID] = []) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            let operation = CKModifyRecordsOperation(recordsToSave: records, recordIDsToDelete: recordIDs)
+            operation.isAtomic = true
+            operation.savePolicy = .ifServerRecordUnchanged
+            operation.modifyRecordsResultBlock = { result in
+                continuation.resume(with: result.map { _ in () })
+            }
+            database.add(operation)
         }
     }
 

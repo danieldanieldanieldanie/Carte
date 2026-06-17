@@ -81,3 +81,13 @@ The SwiftUI front end includes:
 - Add block/report controls and sender allow-lists.
 - Add App Store artwork / final icon set in Xcode.
 - Add UI tests and CloudKit integration tests that run on macOS/Xcode CI.
+
+## Identity and transmission guarantees
+
+Carte maps one iCloud account to one `CarteIdentity` record by using `CKContainer.userRecordID().recordName` as the CloudKit record name. If the same iCloud account signs in again, the existing record is updated and its Carte number is reused rather than allocating a new number.
+
+New numbers are allocated from the singleton `CarteNumberCounter/global` record. The first successful identity creation reads `nextNumber == 0`, writes that number onto the new `CarteIdentity`, and advances `nextNumber` to `1`. Each later identity repeats the same sequence for the next integer.
+
+The counter advance and new identity record are saved in one atomic CloudKit modify operation. If another device updates the counter first, CloudKit returns a server-record-changed conflict and Carte retries with the latest counter. If the same iCloud account wins the race from another device, Carte fetches the existing identity and reuses it.
+
+Card transmission is also saved atomically: each transient `Card` record and its matching `CardDelivery` record are committed as a single CloudKit operation. The local draft is only cleared after the transport send call succeeds, so a failed CloudKit write leaves the composed card in the UI for retry.

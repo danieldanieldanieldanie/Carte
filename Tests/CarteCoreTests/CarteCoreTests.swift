@@ -114,6 +114,26 @@ final class CarteCoreTests: XCTestCase {
     }
 
     @MainActor
+    func testFailedSendKeepsDraftForRetry() async throws {
+        let me = UUID()
+        let state = CarteAppState(
+            currentUserID: me,
+            currentUserDisplayName: "Me",
+            contacts: [.init(id: UUID(), displayName: "Mina", userNumber: 1)],
+            transport: AlwaysFailingTransport()
+        )
+
+        state.draft.frontText = "Do not lose me"
+
+        do {
+            try await state.sendDraft(to: state.contacts[0])
+            XCTFail("Expected send to fail")
+        } catch {
+            XCTAssertEqual(state.draft.frontText, "Do not lose me")
+        }
+    }
+
+    @MainActor
     func testIdentityDirectoryAssignsSequentialNumbersAndKeypadSend() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let store = JSONProfileStore(directory: directory)
@@ -213,4 +233,21 @@ private final class RecordingPostcardExporter: LocalPostcardExporter, @unchecked
         try Data("pdf".utf8).write(to: url)
         return url
     }
+}
+
+
+private actor AlwaysFailingTransport: CardTransport {
+    enum Failure: Error { case expected }
+
+    func send(card: Card, to recipients: [Contact]) async throws -> [CardDelivery] {
+        throw Failure.expected
+    }
+
+    func inbox(for recipient: UserAddress) async throws -> [CardDelivery] { [] }
+
+    func archive(deliveryID: UUID, for recipient: UserAddress) async throws {}
+
+    func erase(deliveryID: UUID, for recipient: UserAddress) async throws {}
+
+    func archiveExpired(for recipient: UserAddress, olderThan: TimeInterval) async throws {}
 }

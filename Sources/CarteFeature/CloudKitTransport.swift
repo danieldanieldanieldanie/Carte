@@ -141,7 +141,7 @@ public actor CloudKitCardTransport: CardTransport {
             deliveries.append(delivery)
         }
 
-        _ = try await database.modifyRecords(saving: recordsToSave, deleting: [])
+        try await modifyRecordsAtomically(saving: recordsToSave)
         return deliveries
     }
 
@@ -176,11 +176,24 @@ public actor CloudKitCardTransport: CardTransport {
         if let cardRecordID {
             idsToDelete.append(cardRecordID)
         }
-        _ = try await database.modifyRecords(saving: [], deleting: idsToDelete)
+        try await modifyRecordsAtomically(saving: [], deleting: idsToDelete)
     }
 
     public func archiveExpired(for recipient: UserAddress, olderThan: TimeInterval) async throws {
         // Expiry is handled locally after the card is saved; CloudKit only holds transient deliveries.
+    }
+
+
+    private func modifyRecordsAtomically(saving records: [CKRecord], deleting recordIDs: [CKRecord.ID] = []) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            let operation = CKModifyRecordsOperation(recordsToSave: records, recordIDsToDelete: recordIDs)
+            operation.isAtomic = true
+            operation.savePolicy = .ifServerRecordUnchanged
+            operation.modifyRecordsResultBlock = { result in
+                continuation.resume(with: result.map { _ in () })
+            }
+            database.add(operation)
+        }
     }
 
     private func fetchAllRecords(matching query: CKQuery) async throws -> [CKRecord] {
